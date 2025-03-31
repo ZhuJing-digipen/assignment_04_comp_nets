@@ -59,6 +59,11 @@ void GameStateMainMenuUpdate(void) {
 	else if (AEInputCheckTriggered(AEVK_Q)) {
 		gGameStateNext = GS_QUIT; // if Q is triggereed then it quits the game. 
 	}
+
+	else if (AEInputCheckTriggered(AEVK_L)) {
+		gGameStateNext = GS_LOBBY; // Switch to Lobby
+	}
+
 }
 
 

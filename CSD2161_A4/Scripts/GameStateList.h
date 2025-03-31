@@ -28,7 +28,8 @@ enum
 	GS_RESTART,
 	GS_QUIT, 
 	GS_NONE,
-	GS_MAINMENU
+	GS_MAINMENU,
+	GS_LOBBY
 };
 
 // ---------------------------------------------------------------------------
