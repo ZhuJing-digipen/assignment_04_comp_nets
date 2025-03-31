@@ -36,9 +36,9 @@ void GameStateLobbyInit() {
 }
 
 void GameStateLobbyUpdate() {
-    // Simulate checking the number of connected clients (use real network data if available)
-    // In real case, get this from your network connection
-    connectedClients = 1; // Simulate at least 1 connected for testing
+    // TODO
+    //get clients from the network
+    connectedClients = 1; 
 
     if (connectedClients >= requiredClients && !countdownStarted) {
         countdownStarted = true;
