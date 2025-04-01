@@ -21,10 +21,14 @@ prior written consent of DigiPen Institute of Technology is prohibited.
 
 // ---------------------------------------------------------------------------
 // Globals
-float	 g_dt;
-double	 g_appTime;
+float	    g_dt;
+double	    g_appTime;
 int			pFont; // this is for the text
 const int	Fontsize = 25; // size of the text
+GameType    gameType;
+
+void BeginGameLoop(HINSTANCE instanceH, int show);
+void ProcessMultiplayerClientInput();
 
 /******************************************************************************/
 /*!
@@ -58,162 +62,74 @@ int WINAPI WinMain(HINSTANCE instanceH, HINSTANCE prevInstanceH, LPSTR command_l
 	// Game loop
 	if (networkType == NetworkType::SERVER)
 	{
+        gameType = GameType::SERVER;
+
 		std::cout << "Processing Server..." << std::endl;
-		
-		sockaddr_in address{};
-		std::map<uint32_t, sockaddr_in> clients;
-		int clientsRequired = 1;
-		int clientCount = 0;
 
-		while (true)
-		{
-			NetworkPacket packet = ReceivePacket(udpSocket, address);
+        int clientsRequired = 1;
+        bool is_game_start = false;
 
-			if (packet.packetID == JOIN_REQUEST)
-			{
-				if (clientCount == clientsRequired && clients.count(packet.sourcePortNumber) == false)
+		while (true) {
+
+            sockaddr_in address{};
+			NetworkPacket packet = ReceivePacket(udpServerSocket, address);
+
+            if (packet.commandID == REQ_CONNECT) {
+
+                std::cout << "Handling connnection request" << std::endl;
+                HandleConnectionRequest(udpServerSocket, address, packet);
+
+            } else if (packet.commandID == REQ_GAME_START) {
+
+                if (clientTargetAddresses.size() > clientsRequired)
+                {
+                    // ignore request, lobby is full
+                    continue;
+                }
+
+                HandleJoinRequest(udpServerSocket, address, packet);
+
+			} else if (packet.commandID == REQ_QUIT) {
+
+                HandleQuitRequest(udpServerSocket, address, packet);
+
+            } else if (clientsJoiningGame.size() >= clientsRequired && !is_game_start) {
+
+				for (sockaddr_in const addr : clientsJoiningGame)
 				{
-					// ignore request, lobby is full
-					continue;
+					SendGameStateStart(udpServerSocket, addr);
 				}
-
-				HandleJoinRequest(udpSocket, address, packet);
-
-				if (clients.count(packet.sourcePortNumber) == false)
-				{
-					clients[packet.sourcePortNumber] = address;
-					++clientCount;
-				}
-
-				if (clientCount == clientsRequired)
-				{
-					for (auto [p, addr] : clients)
-					{
-						SendGameStateStart(udpSocket, addr);
-					}
-
-					while (true)
-					{
-						NetworkPacket gamePacket = ReceivePacket(udpSocket, address);
-						HandlePlayerInput(udpSocket, address, gamePacket);
-					}
-				}
+                is_game_start = true;
+                                
 			}
-			else
-			{
-				std::cout << "Received unknown packet from " << packet.sourcePortNumber << std::endl;
-			}
+
+            // placeholder code
+            if (is_game_start) {
+                if (clientTargetAddresses.size() == 0) {
+                    break;
+                }
+            }
+                
 		}
 
 		Disconnect();
 	}
 	else if (networkType == NetworkType::CLIENT)
 	{
+        gameType = GameType::MULTIPLAYER;
+
 		std::cout << "Processing Client..." << std::endl;
-		
-		SendJoinRequest(udpSocket, targetAddress);
 
-		NetworkPacket responsePacket = ReceivePacket(udpSocket, targetAddress);
-		if (responsePacket.destinationPortNumber == port && responsePacket.packetID == REQUEST_ACCEPTED)
-		{
-			std::cout << "Joined the lobby successfully!" << std::endl;
-			std::cout << "Waiting for lobby to start..." << std::endl;
-		}
-		else
-		{
-			std::cerr << "Failed to join lobby" << std::endl;
-		}
-
-		ReceiveGameStateStart(udpSocket);
-
-		while (true)
-		{
-			SendInput(udpSocket, targetAddress);
-
-			NetworkPacket packet = ReceivePacket(udpSocket, targetAddress);
-			if (packet.packetID == GAME_STATE_UPDATE)
-			{
-				std::cout << "Game state updated: " << packet.data << std::endl;
-			}
-			else
-			{
-				std::cout << "Received unknown packet from " << packet.sourcePortNumber << std::endl;
-			}
-		}
+        BeginGameLoop(instanceH, show);
+        
 
 		Disconnect();
 	}
 	else if (networkType == NetworkType::SINGLE_PLAYER)
 	{
-		// Initialize the system
-		AESysInit(instanceH, show, 800, 600, 1, 60, false, NULL);
+        gameType = GameType::SINGLE_PLAYER;
 
-		pFont = (int)AEGfxCreateFont("Resources/Arial Italic.ttf", Fontsize);
-
-		// Changing the window title
-		AESysSetWindowTitle("Asteroids!");
-
-		//set background color
-		AEGfxSetBackgroundColor(0.0f, 0.0f, 0.0f);
-
-		// set starting game state to asteroid
-		//GameStateMgrInit(GS_ASTEROIDS);
-		GameStateMgrInit(GS_MAINMENU);  // Start at the main Menu
-
-		// breaks this loop if game state set to quit
-		while (gGameStateCurr != GS_QUIT)
-		{
-			// reset the system modules
-			AESysReset();
-
-			// If not restarting, load the gamestate
-			if (gGameStateCurr != GS_RESTART)
-			{
-				GameStateMgrUpdate();
-				GameStateLoad();
-			}
-			else
-			{
-				gGameStateNext = gGameStateCurr = gGameStatePrev;
-			}
-
-			// Initialize the gamestate
-			GameStateInit();
-
-			// main game loop
-			while (gGameStateCurr == gGameStateNext)
-			{
-				AESysFrameStart(); // start of frame
-
-				GameStateUpdate(); // update current game state
-
-				GameStateDraw(); // draw current game state
-
-				AESysFrameEnd(); // end of frame
-
-				// check if forcing the application to quit
-				if (AESysDoesWindowExist() == false)
-				{
-					gGameStateNext = GS_QUIT;
-				}
-
-				g_dt = static_cast<f32>(AEFrameRateControllerGetFrameTime()); // get delta time
-				g_appTime += g_dt; // accumulate application time
-			}
-
-			GameStateFree(); // free current game state
-
-			// unload current game state unless set to restart
-			if (gGameStateNext != GS_RESTART)
-				GameStateUnload();
-
-			// set prev and curr for the next game states
-			gGameStatePrev = gGameStateCurr;
-			gGameStateCurr = gGameStateNext;
-		}
-	
-		// free the system
-		AESysExit();
+        BeginGameLoop(instanceH, show);
 	}
 
 	// Wait for the user to press any key
@@ -225,4 +141,109 @@ int WINAPI WinMain(HINSTANCE instanceH, HINSTANCE prevInstanceH, LPSTR command_l
 
 	// free console
 	FreeConsoleWindow();
+}
+
+void ProcessMultiplayerClientInput() {
+
+    sockaddr_in address{};
+    NetworkPacket packet = ReceivePacket(udpClientSocket, address);
+
+    if (AEInputCheckTriggered(AEVK_L) && gGameStateCurr == GS_MAINMENU) {
+
+        SendJoinRequest(udpClientSocket, serverTargetAddress);
+
+        std::cout << "Joined the lobby successfully!" << std::endl;
+        std::cout << "Waiting for game to start..." << std::endl;
+        
+    } else if (AEInputCheckTriggered(AEVK_Q)) {
+
+        SendQuitRequest(udpClientSocket, serverTargetAddress);
+        gGameStateNext = GS_QUIT;
+    }
+
+    if (HandleGameStateStart(packet)) {
+        gGameStateNext = GS_ASTEROIDS;
+    }
+
+    // Resend lost packets if needed
+    RetransmitPacket();
+}
+
+void BeginGameLoop(HINSTANCE instanceH, int show) {
+
+    // Initialize the system
+    AESysInit(instanceH, show, 800, 600, 1, 60, false, NULL);
+
+    pFont = (int)AEGfxCreateFont("Resources/Arial Italic.ttf", Fontsize);
+
+    // Changing the window title
+    AESysSetWindowTitle("Asteroids!");
+
+    //set background color
+    AEGfxSetBackgroundColor(0.0f, 0.0f, 0.0f);
+
+    // set starting game state to asteroid
+    //GameStateMgrInit(GS_ASTEROIDS);
+    GameStateMgrInit(GS_MAINMENU);  // Start at the main Menu
+
+    // breaks this loop if game state set to quit
+    while (gGameStateCurr != GS_QUIT)
+    {
+        // reset the system modules
+        AESysReset();
+
+        // If not restarting, load the gamestate
+        if (gGameStateCurr != GS_RESTART)
+        {
+            GameStateMgrUpdate();
+            GameStateLoad();
+        }
+        else
+        {
+            gGameStateNext = gGameStateCurr = gGameStatePrev;
+        }
+
+        // Initialize the gamestate
+        GameStateInit();
+
+        // main game loop
+        while (gGameStateCurr == gGameStateNext)
+        {
+            AESysFrameStart(); // start of frame
+
+            if (gameType == GameType::MULTIPLAYER) {
+
+                ProcessMultiplayerClientInput();
+            }
+
+            GameStateUpdate(); // update current game state
+
+            GameStateDraw(); // draw current game state
+
+            AESysFrameEnd(); // end of frame
+
+            // check if forcing the application to quit
+            if (AESysDoesWindowExist() == false)
+            {
+                gGameStateNext = GS_QUIT;
+                SendQuitRequest(udpClientSocket, serverTargetAddress);
+            }
+
+            g_dt = static_cast<f32>(AEFrameRateControllerGetFrameTime()); // get delta time
+            g_appTime += g_dt; // accumulate application time
+        }
+
+        GameStateFree(); // free current game state
+
+        // unload current game state unless set to restart
+        if (gGameStateNext != GS_RESTART)
+            GameStateUnload();
+
+        // set prev and curr for the next game states
+        gGameStatePrev = gGameStateCurr;
+        gGameStateCurr = gGameStateNext;
+    }
+
+    // free the system
+    AESysExit();
 }
