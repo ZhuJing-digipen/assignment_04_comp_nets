@@ -60,59 +60,65 @@ int WINAPI WinMain(HINSTANCE instanceH, HINSTANCE prevInstanceH, LPSTR command_l
 
 
 	// Game loop
-	if (networkType == NetworkType::SERVER)
-	{
+    if (networkType == NetworkType::SERVER)
+    {
         gameType = GameType::SERVER;
 
-		std::cout << "Processing Server..." << std::endl;
+        std::cout << "Processing Server..." << std::endl;
 
-        int clientsRequired = 2;
-        bool is_game_start = false;
+        double lobbyTimer = 10.0;
+        bool countdownStarted = false;
 
-		while (true) {
-
+        while (true)
+        {
             sockaddr_in address{};
-			NetworkPacket packet = ReceivePacket(udpServerSocket, address);
+            NetworkPacket packet = ReceivePacket(udpServerSocket, address);
 
-            if (packet.commandID == REQ_CONNECT) {
-
+            if (packet.commandID == REQ_CONNECT)
+            {
                 HandleConnectionRequest(udpServerSocket, address, packet);
-
-            } else if (packet.commandID == REQ_GAME_START) {
-
-                if (clientsJoiningGame.size() >= clientsRequired)
-                {
-                    // ignore request, lobby is full
-                    continue;
-                }
-
+            }
+            else if (packet.commandID == REQ_GAME_START)
+            {
                 HandleJoinRequest(udpServerSocket, address, packet);
 
-			} else if (packet.commandID == REQ_QUIT) {
-
-                HandleQuitRequest(udpServerSocket, address, packet);
-
-            } else if (clientsJoiningGame.size() >= clientsRequired && !is_game_start) {
-
-				for (sockaddr_in const addr : clientsJoiningGame)
-				{
-					SendGameStateStart(udpServerSocket, addr);
-				}
-                is_game_start = true;
-                                
-			}
-
-            // placeholder code
-            if (is_game_start) {
-                if (clientTargetAddresses.size() == 0) {
-                    break;
+                if (!countdownStarted && clientsJoiningGame.size() >= 1)
+                {
+                    countdownStarted = true;
+                    lobbyTimer = 10.0;
+                    std::cout << "[SERVER] Countdown started!\n";
                 }
             }
-                
-		}
+            else if (packet.commandID == REQ_QUIT)
+            {
+                HandleQuitRequest(udpServerSocket, address, packet);
+            }
 
-		Disconnect();
-	}
+            // Handle countdown
+            if (countdownStarted)
+            {
+                lobbyTimer -= g_dt;
+
+                if (lobbyTimer <= 0.0)
+                {
+                    std::cout << "[SERVER] Lobby timer finished. Starting game for "
+                        << clientsJoiningGame.size() << " clients.\n";
+
+                    for (const sockaddr_in& addr : clientsJoiningGame)
+                    {
+                        SendGameStateStart(udpServerSocket, addr);
+                    }
+
+                    break;  // Exit the server lobby loop
+                }
+            }
+
+            Sleep(10); // reduce CPU usage
+        }
+
+        Disconnect();
+    }
+
 	else if (networkType == NetworkType::CLIENT)
 	{
         gameType = GameType::MULTIPLAYER;

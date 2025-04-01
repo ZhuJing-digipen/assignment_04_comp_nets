@@ -17,6 +17,8 @@ uint16_t clientPort{};                                          // used for Netw
 SOCKET udpClientSocket = INVALID_SOCKET;                        // used for NetworkType::CLIENT
 SOCKET udpServerSocket = INVALID_SOCKET;                        // used for NetworkType::SERVER
 
+
+extern int connectedClients;
 const std::string configFileRelativePath = "Resources/Configuration.txt";
 const std::string configFileServerIp = "serverIp";
 const std::string configFileServerPort = "serverUdpPort";
@@ -40,13 +42,13 @@ int InitialiseNetwork()
 	std::cout << "Network Type (S for Server | C for Client | Default for Single Player): ";
 	std::getline(std::cin, networkTypeString);
 
-	if (networkTypeString == "s")
+	if (networkTypeString == "S")
 	{
 		networkType = NetworkType::SERVER;
 		std::cout << "Initialising as Server..." << std::endl;
 		return StartServer();
 	}
-	else if (networkTypeString == "c") 
+	else if (networkTypeString == "C") 
 	{
 		networkType = NetworkType::CLIENT;
 		std::cout << "Initialising as Client..." << std::endl;
@@ -574,10 +576,21 @@ void SendGameStateStart(SOCKET socket, sockaddr_in address)
     // Send RSP_GAME_START
     NetworkPacket packet;
     packet.commandID = RSP_GAME_START;
+    packet.flags = 0;
+
+    std::string msg = std::to_string(clientsJoiningGame.size());
+    strncpy_s(packet.data, msg.c_str(), sizeof(packet.data) - 1);
+    packet.dataLength = static_cast<uint16_t>(msg.size());
+
+    if (SendPacket(socket, address, packet, false)) {
+        std::cout << "[SERVER] Sent RSP_GAME_START to client. Player count: " << clientsJoiningGame.size() << std::endl;
+    }
+
     if (SendPacket(socket, address, packet, false)) {
         std::cout << "[SERVER SIDE] Game started. Initial game state..." << std::endl;
     }
     
+
     // @todo if needed: To send initial game data with the packet
 }
 
@@ -586,14 +599,16 @@ bool HandleGameStateStart(NetworkPacket recvPkt)
     if (recvPkt.commandID == RSP_GAME_START && recvPkt.flags == 0) {
         // Send ACK
         if (SendAck(udpClientSocket, serverTargetAddress, recvPkt)) {
+            connectedClients = std::stoi(recvPkt.data); 
+
             std::cout << "[CLIENT SIDE] Game started. Initial game state..." << std::endl;
             return true;
         }
     }
 
     return false;
-
 }
+
 
 bool CompareSockaddr(const sockaddr_in& addr1, const sockaddr_in& addr2) {
     return (addr1.sin_family == addr2.sin_family &&

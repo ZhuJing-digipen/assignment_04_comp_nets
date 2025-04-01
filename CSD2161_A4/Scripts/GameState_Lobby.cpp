@@ -19,9 +19,9 @@ prior written consent of DigiPen Institute of Technology is prohibited.
 #include <cstdio>
 #include <string>
 
-static double lobbyTimer = 10.0;    
+static double lobbyTimer = 10.0;
 static bool countdownStarted = false;
-static int connectedClients = 0;
+int connectedClients = 0; 
 static const int requiredClients = 1;
 extern int pFont; 
 
@@ -36,23 +36,33 @@ void GameStateLobbyInit() {
 }
 
 void GameStateLobbyUpdate() {
-    // TODO
-    //get clients from the network
-    connectedClients = 1; 
-
-    if (connectedClients >= requiredClients && !countdownStarted) {
-        countdownStarted = true;
+    // Only update connectedClients from clientsJoiningGame if we're the server
+    if (networkType == NetworkType::SERVER) {
+        connectedClients = static_cast<int>(clientsJoiningGame.size());
     }
 
-    // Decrease timer if started
+    // Check if game state start packet received
+    sockaddr_in addr{};
+    NetworkPacket packet = ReceivePacket(udpClientSocket, addr);
+    if (HandleGameStateStart(packet)) {
+        gGameStateNext = GS_ASTEROIDS;
+    }
+
+    if (connectedClients >= 1 && !countdownStarted) {
+        countdownStarted = true;
+        lobbyTimer = 10.0;
+    }
+
     if (countdownStarted) {
         lobbyTimer -= g_dt;
-
         if (lobbyTimer <= 0.0) {
-            gGameStateNext = GS_ASTEROIDS; // Start the game
+            countdownStarted = false;
         }
     }
+
+    RetransmitPacket();
 }
+
 
 void GameStateLobbyDraw() {
     AEGfxSetRenderMode(AE_GFX_RM_COLOR);
